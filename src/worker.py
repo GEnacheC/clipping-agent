@@ -42,36 +42,3 @@ def start_scheduler(interval_hours: int = 24) -> None:
         time.sleep(interval_seconds)
 
 
-def run_once() -> None:
-    """
-    Executa o pipeline uma única vez (útil para chamada via cron externo).
-    """
-    from main import run_clipping
-    run_clipping()
-
-
-if __name__ == "__main__":
-    import os
-    from dotenv import load_dotenv
-    import logging
-
-    load_dotenv()
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler("data/worker.log", encoding="utf-8"),
-        ],
-    )
-
-    mode = os.getenv("WORKER_MODE", "loop").lower()
-
-    if mode == "once":
-        # Executa uma vez e sai (ideal para cron externo)
-        run_once()
-    else:
-        # Loop contínuo com intervalo configurável
-        hours = int(os.getenv("WORKER_INTERVAL_HOURS", "24"))
-        start_scheduler(interval_hours=hours)
