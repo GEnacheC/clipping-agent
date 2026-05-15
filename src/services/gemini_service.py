@@ -76,3 +76,14 @@ class GeminiService:
         except Exception as exc:
             logger.error(f"[GeminiService] Erro ao chamar Gemini API: {exc}")
             return f"__ERROR__: {exc}"
+
+    def _format_articles(self, summaries: Dict[str, str]) -> str:
+        """
+        Formata o bloco de artigos para inserção no prompt.
+        """
+        lines = []
+        for idx, (url, summary) in enumerate(summaries.items(), start=1):
+            lines.append(f"[{idx}] URL: {url}")
+            lines.append(f"Resumo: {summary}")
+            lines.append("")
+        return "\n".join(lines)
