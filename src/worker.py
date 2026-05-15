@@ -13,6 +13,10 @@ Exemplo de agendamento externo via cron:
 import logging
 import sys
 import time
+from main import run_clipping, build_orchestrator, run_clipping
+import os
+from dotenv import load_dotenv
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +29,6 @@ def start_scheduler(interval_hours: int = 24) -> None:
     Args:
         interval_hours: Intervalo entre execuções em horas (padrão: 24).
     """
-    # Import local para evitar erros de configuração ao importar o módulo
-    from main import run_clipping, build_orchestrator  # noqa: F401
 
     interval_seconds = interval_hours * 3600
     logger.info(f"[Worker] Iniciado. Executará a cada {interval_hours}h.")
@@ -41,19 +43,15 @@ def start_scheduler(interval_hours: int = 24) -> None:
         logger.info(f"[Worker] Próxima execução em {interval_hours}h. Aguardando...")
         time.sleep(interval_seconds)
 
+
 def run_once() -> None:
     """
     Executa o pipeline uma única vez (útil para chamada via cron externo).
     """
-    from main import run_clipping
     run_clipping()
 
 
 if __name__ == "__main__":
-    import os
-    from dotenv import load_dotenv
-    import logging
-
     load_dotenv()
 
     logging.basicConfig(
@@ -73,4 +71,4 @@ if __name__ == "__main__":
     else:
         # Loop contínuo com intervalo configurável
         hours = int(os.getenv("WORKER_INTERVAL_HOURS", "24"))
-        start_scheduler(interval_hours=hours) 
+        start_scheduler(interval_hours=hours)
