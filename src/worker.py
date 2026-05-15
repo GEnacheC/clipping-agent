@@ -49,7 +49,7 @@ def run_once() -> None:
     run_clipping()
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     import os
     from dotenv import load_dotenv
     import logging
