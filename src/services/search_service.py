@@ -1,120 +1,95 @@
 """
 SearchService — Etapa 1
-Busca links sobre uma empresa usando motor de pesquisa.
-Retorna lista de URLs ainda não visitadas.
+Busca links usando a API Serper (google.serper.dev).
+Requer SERPER_API_KEY no .env.
 """
 
+import http.client
+import json
 import logging
 import os
-import random
-import time
 from typing import List
-
-from serpapi import GoogleSearch
 
 logger = logging.getLogger(__name__)
 
 MAX_RESULTS_PER_QUERY = 10
-MAX_RETRIES = 4
 
 
 class SearchService:
     """
-    Responsável por buscar links de notícias/artigos sobre uma empresa.
-    Filtra links já visitados antes de retornar.
+    Busca links de notícias/artigos sobre uma empresa via Serper API.
+    Suporta filtro de período via parâmetro tbs (h=hora, d=dia, w=semana, m=mês, y=ano, ""=qualquer).
     """
 
     def __init__(
         self,
         api_key: str,
         results_count: int = 10,
-        lang: str = "pt-BR",
-        pause: float = 2.0,
+        lang: str = "pt-br",
+        tbs: str = "",
     ):
-        """
-        Args:
-            api_key: Chave da API SerpAPI.
-            results_count: Quantidade máxima de resultados por busca.
-            lang: Idioma preferido dos resultados.
-            pause: Pausa (segundos) entre requisições para evitar bloqueio.
-        """
-        self.api_key = (api_key or os.getenv("SERPAPI_API_KEY", "")).strip()
+        self.api_key = (api_key or os.getenv("SERPER_API_KEY", "")).strip()
         if not self.api_key:
-            raise ValueError("[SearchService] SERPAPI_API_KEY não configurada.")
+            raise ValueError("[SearchService] SERPER_API_KEY não configurada.")
         self.results_count = min(results_count, MAX_RESULTS_PER_QUERY)
         self.lang = lang
-        self.pause = pause
+        self.tbs = tbs  # ex: "qdr:d", "qdr:w", "qdr:m" — vazio = qualquer período
 
     def search(self, company_name: str, visited_links: set) -> List[str]:
         """
         Executa a busca e retorna apenas links não visitados.
-
-        Args:
-            company_name: Nome da empresa a ser pesquisada.
-            visited_links: Conjunto de links já processados (para exclusão).
-
-        Returns:
-            Lista de URLs novas encontradas.
         """
-        query = f'{company_name}'
-        logger.info(f"[SearchService] Buscando por: {query!r}")
+        logger.info(f"[SearchService] Buscando: {company_name!r} | tbs={self.tbs!r}")
 
-        new_links: List[str] = []
+        raw_links = self._fetch(company_name)
+        new_links = [url for url in raw_links if url not in visited_links]
+        skipped = len(raw_links) - len(new_links)
 
-        results = self._search_with_retries(query)
-        for url in results:
-            if url not in visited_links:
-                new_links.append(url)
-                logger.debug(f"[SearchService] Novo link encontrado: {url}")
-            else:
-                logger.debug(f"[SearchService] Link já visitado, ignorado: {url}")
-
+        if skipped:
+            logger.info(f"[SearchService] {skipped} link(s) já visitado(s), ignorados.")
         logger.info(f"[SearchService] {len(new_links)} novo(s) link(s) encontrado(s).")
         return new_links
 
-    def _search_with_retries(self, query: str) -> List[str]:
-        """
-        Tenta executar a busca com retentativas quando o Google responde 429.
-        """
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                search_client = GoogleSearch(
-                    {
-                        "engine": "google",
-                        "q": query,
-                        "num": self.results_count,
-                        "hl": "pt",
-                        "gl": "br",
-                        "api_key": self.api_key,
-                    }
-                )
-                data = search_client.get_dict()
-                organic_results = data.get("organic_results", [])
-                links = [item.get("link") for item in organic_results if item.get("link")]
-                return links[: self.results_count]
-            except Exception as exc:
-                if self._is_rate_limit_error(exc) and attempt < MAX_RETRIES:
-                    wait_seconds = self._compute_backoff(attempt)
-                    logger.warning(
-                        "[SearchService] Rate limit na SerpAPI. Nova tentativa em %.1fs (%d/%d).",
-                        wait_seconds,
-                        attempt,
-                        MAX_RETRIES,
-                    )
-                    time.sleep(wait_seconds)
-                    continue
+    def _fetch(self, query: str) -> List[str]:
+        payload: dict = {
+            "q": query,
+            "gl": "br",
+            "hl": self.lang,
+            "num": self.results_count,
+        }
+        # Só inclui tbs se tiver valor — vazio significa "qualquer período"
+        if self.tbs:
+            payload["tbs"] = f"qdr:{self.tbs}"
 
-                logger.error(f"[SearchService] Erro durante a busca: {exc}")
-                return []
+        try:
+            conn = http.client.HTTPSConnection("google.serper.dev", timeout=15)
+            conn.request(
+                "POST",
+                "/search",
+                body=json.dumps(payload),
+                headers={
+                    "X-API-KEY": self.api_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            res = conn.getresponse()
+            raw = res.read().decode("utf-8")
+            conn.close()
+        except Exception as exc:
+            logger.error(f"[SearchService] Erro de conexão com Serper: {exc}")
+            return []
 
-        return []
+        if res.status != 200:
+            logger.error(f"[SearchService] Serper retornou HTTP {res.status}: {raw[:200]}")
+            return []
 
-    @staticmethod
-    def _is_rate_limit_error(exc: Exception) -> bool:
-        message = str(exc)
-        return "429" in message or "Too Many Requests" in message
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.error(f"[SearchService] Resposta inválida da Serper: {exc}")
+            return []
 
-    def _compute_backoff(self, attempt: int) -> float:
-        # Backoff exponencial com jitter para reduzir chance de novo bloqueio.
-        base = max(self.pause, 2.0)
-        return base * (2 ** (attempt - 1)) + random.uniform(0.5, 1.5)
+        organic = data.get("organic", [])
+        links = [item["link"] for item in organic if item.get("link")]
+        logger.info(f"[SearchService] Serper retornou {len(links)} resultado(s).")
+        return links
