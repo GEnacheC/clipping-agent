@@ -1,9 +1,10 @@
 """
 gui.py — Interface gráfica do Clipping Agent
+Design: flat, claro, paleta azul e branco. Sem sombras pesadas, sem escuridão.
 """
 
 import tkinter as tk
-from tkinter import scrolledtext, ttk
+from tkinter import scrolledtext
 import threading
 import os
 import sys
@@ -11,25 +12,33 @@ import subprocess
 import queue
 from datetime import datetime
 
-# ── Paleta ────────────────────────────────────────────────────────────────────
-BG_DARK    = "#0d0f14"
-BG_PANEL   = "#13161e"
-BG_INPUT   = "#1a1d27"
-BG_BORDER  = "#252836"
-ACCENT     = "#f0a500"
-ACCENT_DIM = "#7a5200"
-FG_PRIMARY = "#e8e8e8"
-FG_MUTED   = "#6b7280"
-FG_GREEN   = "#4ade80"
-FG_RED     = "#f87171"
-FG_BLUE    = "#60a5fa"
-FG_LOG     = "#a8b5c8"
-FONT_MONO  = ("Courier New", 10)
-FONT_LABEL = ("Courier New", 9, "bold")
-FONT_TITLE = ("Courier New", 18, "bold")
-FONT_BTN   = ("Courier New", 11, "bold")
+# ── Paleta flat azul/branco ───────────────────────────────────────────────────
+WHITE       = "#FFFFFF"
+BG_APP      = "#F0F4F8"       # cinza-azulado muito suave (fundo geral)
+BG_CARD     = "#FFFFFF"       # cards e painéis
+BG_INPUT    = "#F7FAFC"       # campos de texto
+BG_LOG      = "#F0F4F8"       # área de log
+BORDER      = "#D0DCE8"       # bordas suaves
+BLUE_PRI    = "#2563EB"       # azul primário (botão, labels ativos)
+BLUE_HOV    = "#1D4ED8"       # hover do botão
+BLUE_LIGHT  = "#DBEAFE"       # fundo dos pills selecionados
+BLUE_MUTED  = "#93C5FD"       # pills não selecionados — texto
+TEXT_DARK   = "#1E293B"       # texto principal
+TEXT_MID    = "#475569"       # texto secundário
+TEXT_MUTED  = "#94A3B8"       # texto desabilitado / timestamps
+LOG_DEFAULT = "#334155"       # texto padrão do log
+LOG_INFO    = "#2563EB"       # log info
+LOG_SUCCESS = "#16A34A"       # log sucesso
+LOG_WARN    = "#B45309"       # log aviso
+LOG_ERROR   = "#DC2626"       # log erro
 
-# Opções de período — label → valor tbs (vazio = qualquer período)
+FONT_UI     = ("Segoe UI", 10)
+FONT_LABEL  = ("Segoe UI", 9, "bold")
+FONT_TITLE  = ("Segoe UI", 17, "bold")
+FONT_SUB    = ("Segoe UI", 8)
+FONT_MONO   = ("Consolas", 9)
+FONT_BTN    = ("Segoe UI", 10, "bold")
+
 PERIOD_OPTIONS = [
     ("Qualquer período", ""),
     ("Última hora",      "h"),
@@ -41,12 +50,12 @@ PERIOD_OPTIONS = [
 
 
 class PrintRedirector:
-    def __init__(self, log_queue):
-        self.log_queue = log_queue
+    def __init__(self, q):
+        self.q = q
 
     def write(self, text):
         if text.strip():
-            self.log_queue.put(text)
+            self.q.put(text)
 
     def flush(self):
         pass
@@ -55,150 +64,184 @@ class PrintRedirector:
 class ClippingGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("CLIPPING AGENT")
-        self.root.geometry("720x680")
+        self.root.title("Clipping Agent")
+        self.root.geometry("740x700")
         self.root.resizable(False, False)
-        self.root.configure(bg=BG_DARK)
+        self.root.configure(bg=BG_APP)
 
         self.log_queue = queue.Queue()
         self._build_ui()
         self.check_queue()
 
-    # ── UI ────────────────────────────────────────────────────────────────────
+    # ── Construção ────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Cabeçalho
-        header = tk.Frame(self.root, bg=BG_DARK)
-        header.pack(fill="x", padx=24, pady=(22, 0))
-        tk.Label(header, text="▸ CLIPPING", font=FONT_TITLE, bg=BG_DARK, fg=ACCENT).pack(side="left")
-        tk.Label(header, text="AGENT",      font=FONT_TITLE, bg=BG_DARK, fg=FG_PRIMARY).pack(side="left", padx=(4, 0))
-        tk.Label(header, text=f"v3.0  //  Serper API  //  {datetime.now().year}",
-                 font=("Courier New", 8), bg=BG_DARK, fg=FG_MUTED).pack(side="right", pady=(8, 0))
+        # ── Cabeçalho ──────────────────────────────────────────────────────
+        header = tk.Frame(self.root, bg=WHITE, bd=0)
+        header.pack(fill="x")
 
-        self._divider()
+        # faixa azul lateral esquerda
+        accent_bar = tk.Frame(header, bg=BLUE_PRI, width=4)
+        accent_bar.pack(side="left", fill="y")
 
-        # Painel de inputs
-        panel = tk.Frame(self.root, bg=BG_PANEL)
-        panel.pack(fill="x", padx=24, pady=4)
+        inner_header = tk.Frame(header, bg=WHITE)
+        inner_header.pack(side="left", fill="both", expand=True, padx=20, pady=14)
 
-        # Termo
-        self._label(panel, "TERMO DE PESQUISA")
-        self.term_entry = self._entry(panel, width=66)
-        self.term_entry.pack(padx=14, pady=(0, 10))
+        title_row = tk.Frame(inner_header, bg=WHITE)
+        title_row.pack(fill="x")
+
+        tk.Label(title_row, text="Clipping Agent",
+                 font=FONT_TITLE, bg=WHITE, fg=TEXT_DARK).pack(side="left")
+
+        badge = tk.Label(title_row, text="  Serper API  ",
+                         font=("Segoe UI", 8, "bold"),
+                         bg=BLUE_LIGHT, fg=BLUE_PRI,
+                         relief="flat", padx=2, pady=2)
+        badge.pack(side="left", padx=(10, 0), pady=(4, 0))
+
+        tk.Label(inner_header,
+                 text="Monitoramento de menções na web com síntese via Gemini",
+                 font=FONT_SUB, bg=WHITE, fg=TEXT_MUTED).pack(anchor="w", pady=(2, 0))
+
+        # separador
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x")
+
+        # ── Corpo ──────────────────────────────────────────────────────────
+        body = tk.Frame(self.root, bg=BG_APP)
+        body.pack(fill="both", expand=True, padx=20, pady=16)
+
+        # Card de configurações
+        card = tk.Frame(body, bg=BG_CARD, bd=1, relief="flat",
+                        highlightthickness=1, highlightbackground=BORDER)
+        card.pack(fill="x")
+
+        card_inner = tk.Frame(card, bg=BG_CARD)
+        card_inner.pack(fill="x", padx=20, pady=18)
+
+        # Label da seção
+        tk.Label(card_inner, text="CONFIGURAÇÃO DA BUSCA",
+                 font=("Segoe UI", 8, "bold"), bg=BG_CARD, fg=BLUE_PRI).pack(anchor="w")
+        tk.Frame(card_inner, bg=BORDER, height=1).pack(fill="x", pady=(6, 14))
+
+        # Campo de termo
+        tk.Label(card_inner, text="Termo de pesquisa",
+                 font=FONT_LABEL, bg=BG_CARD, fg=TEXT_DARK).pack(anchor="w")
+        tk.Label(card_inner, text="Nome da empresa, assunto ou palavra-chave",
+                 font=("Segoe UI", 8), bg=BG_CARD, fg=TEXT_MUTED).pack(anchor="w", pady=(1, 6))
+
+        entry_frame = tk.Frame(card_inner, bg=BORDER, bd=0,
+                               highlightthickness=1, highlightbackground=BORDER)
+        entry_frame.pack(fill="x")
+
+        self.term_entry = tk.Entry(
+            entry_frame,
+            font=("Segoe UI", 11), bg=BG_INPUT, fg=TEXT_DARK,
+            insertbackground=BLUE_PRI, relief="flat", bd=8,
+            highlightthickness=0,
+        )
+        self.term_entry.pack(fill="x")
+        self.term_entry.bind("<FocusIn>",  lambda e: entry_frame.config(highlightbackground=BLUE_PRI))
+        self.term_entry.bind("<FocusOut>", lambda e: entry_frame.config(highlightbackground=BORDER))
+        self._entry_frame = entry_frame
 
         # Período
-        period_row = tk.Frame(panel, bg=BG_PANEL)
-        period_row.pack(fill="x", padx=14, pady=(0, 14))
+        tk.Label(card_inner, text="Período de busca",
+                 font=FONT_LABEL, bg=BG_CARD, fg=TEXT_DARK).pack(anchor="w", pady=(16, 0))
+        tk.Label(card_inner, text="Filtrar resultados por data de publicação",
+                 font=("Segoe UI", 8), bg=BG_CARD, fg=TEXT_MUTED).pack(anchor="w", pady=(1, 8))
 
-        self._label(period_row, "PERÍODO DE BUSCA", inline=True)
+        self.tbs_var = tk.StringVar(value="")
+        pills_frame = tk.Frame(card_inner, bg=BG_CARD)
+        pills_frame.pack(anchor="w")
 
-        # Frame dos botões de rádio
-        radio_frame = tk.Frame(period_row, bg=BG_PANEL)
-        radio_frame.pack(anchor="w", pady=(4, 0))
-
-        self.tbs_var = tk.StringVar(value="")  # vazio = qualquer período
-
+        self._pills = []
         for label, value in PERIOD_OPTIONS:
-            rb = tk.Radiobutton(
-                radio_frame,
-                text=label,
-                variable=self.tbs_var,
-                value=value,
-                font=("Courier New", 9),
-                bg=BG_PANEL, fg=FG_PRIMARY,
-                selectcolor=BG_INPUT,
-                activebackground=BG_PANEL,
-                activeforeground=ACCENT,
-                indicatoron=0,                  # botão estilo "pill"
-                bd=0,
-                padx=10, pady=5,
-                relief="flat",
+            pill = tk.Label(
+                pills_frame, text=label,
+                font=("Segoe UI", 9),
+                padx=12, pady=5,
                 cursor="hand2",
-                command=lambda: self._refresh_radio_colors(),
+                relief="flat", bd=0,
             )
-            rb.pack(side="left", padx=(0, 6))
+            pill.pack(side="left", padx=(0, 6))
+            pill.bind("<Button-1>", lambda e, v=value: self._select_period(v))
+            self._pills.append((pill, value))
 
-        self._radio_buttons = radio_frame.winfo_children()
-        self._refresh_radio_colors()
-
-        self._divider()
+        self._select_period("")  # seleciona "Qualquer período" por padrão
 
         # Botão
-        btn_frame = tk.Frame(self.root, bg=BG_DARK)
-        btn_frame.pack(pady=10)
+        btn_outer = tk.Frame(body, bg=BG_APP)
+        btn_outer.pack(fill="x", pady=(14, 0))
+
         self.btn_run = tk.Button(
-            btn_frame, text="▶  GERAR RELATÓRIO",
-            font=FONT_BTN, bg=ACCENT, fg=BG_DARK,
-            activebackground=ACCENT_DIM, activeforeground=FG_PRIMARY,
-            bd=0, padx=28, pady=10, cursor="hand2",
+            btn_outer,
+            text="Gerar Relatório",
+            font=FONT_BTN,
+            bg=BLUE_PRI, fg=WHITE,
+            activebackground=BLUE_HOV, activeforeground=WHITE,
+            relief="flat", bd=0,
+            padx=24, pady=10,
+            cursor="hand2",
             command=self.start_processing,
         )
-        self.btn_run.pack()
+        self.btn_run.pack(side="left")
 
-        # Status
-        self._divider()
-        status_bar = tk.Frame(self.root, bg=BG_DARK)
-        status_bar.pack(fill="x", padx=24, pady=(0, 4))
-        tk.Label(status_bar, text="OUTPUT  //  PIPELINE LOG",
-                 font=("Courier New", 8, "bold"), bg=BG_DARK, fg=FG_MUTED).pack(side="left")
-        self.status_dot = tk.Label(status_bar, text="●  IDLE",
-                                   font=("Courier New", 8, "bold"), bg=BG_DARK, fg=FG_MUTED)
-        self.status_dot.pack(side="right")
+        self.status_label = tk.Label(
+            btn_outer, text="Pronto",
+            font=("Segoe UI", 9), bg=BG_APP, fg=TEXT_MUTED,
+        )
+        self.status_label.pack(side="left", padx=14)
 
-        # Log
-        log_frame = tk.Frame(self.root, bg=BG_BORDER, bd=1, relief="solid")
-        log_frame.pack(fill="both", expand=True, padx=24, pady=(0, 20))
+        # Card do log
+        log_card = tk.Frame(body, bg=BG_CARD, bd=0,
+                            highlightthickness=1, highlightbackground=BORDER)
+        log_card.pack(fill="both", expand=True, pady=(14, 0))
+
+        log_header = tk.Frame(log_card, bg=BG_CARD)
+        log_header.pack(fill="x", padx=16, pady=(10, 0))
+
+        tk.Label(log_header, text="LOG DE EXECUÇÃO",
+                 font=("Segoe UI", 8, "bold"), bg=BG_CARD, fg=BLUE_PRI).pack(side="left")
+
+        self.log_status = tk.Label(log_header, text="● Aguardando",
+                                   font=("Segoe UI", 8), bg=BG_CARD, fg=TEXT_MUTED)
+        self.log_status.pack(side="right")
+
+        tk.Frame(log_card, bg=BORDER, height=1).pack(fill="x", padx=0, pady=(8, 0))
+
         self.log_area = scrolledtext.ScrolledText(
-            log_frame,
-            font=FONT_MONO, bg=BG_DARK, fg=FG_LOG,
-            insertbackground=ACCENT, selectbackground=ACCENT_DIM,
-            bd=0, padx=14, pady=12,
-            state=tk.DISABLED, wrap=tk.WORD,
+            log_card,
+            font=FONT_MONO, bg=BG_LOG, fg=LOG_DEFAULT,
+            insertbackground=BLUE_PRI,
+            relief="flat", bd=0,
+            padx=16, pady=12,
+            state=tk.DISABLED,
+            wrap=tk.WORD,
         )
         self.log_area.pack(fill="both", expand=True)
 
-        self.log_area.tag_config("accent",  foreground=ACCENT)
-        self.log_area.tag_config("success", foreground=FG_GREEN)
-        self.log_area.tag_config("error",   foreground=FG_RED)
-        self.log_area.tag_config("info",    foreground=FG_BLUE)
-        self.log_area.tag_config("muted",   foreground=FG_MUTED)
-        self.log_area.tag_config("normal",  foreground=FG_LOG)
+        self.log_area.tag_config("ts",      foreground=TEXT_MUTED)
+        self.log_area.tag_config("normal",  foreground=LOG_DEFAULT)
+        self.log_area.tag_config("info",    foreground=LOG_INFO)
+        self.log_area.tag_config("success", foreground=LOG_SUCCESS)
+        self.log_area.tag_config("warn",    foreground=LOG_WARN)
+        self.log_area.tag_config("error",   foreground=LOG_ERROR)
 
-        self._append_log("Sistema pronto. Configure os parâmetros e clique em Gerar Relatório.\n", "muted")
+        self._append_log("Sistema pronto.", "normal")
 
-    def _divider(self):
-        tk.Frame(self.root, bg=BG_BORDER, height=1).pack(fill="x", padx=24, pady=6)
+    # ── Helpers de UI ────────────────────────────────────────────────────────
 
-    def _label(self, parent, text, inline=False):
-        lbl = tk.Label(parent, text=text, font=FONT_LABEL,
-                       bg=parent.cget("bg"), fg=ACCENT)
-        lbl.pack(anchor="w", padx=14 if not inline else 0, pady=(8, 2))
-
-    def _entry(self, parent, width=66):
-        return tk.Entry(
-            parent, font=FONT_MONO, width=width,
-            bg=BG_INPUT, fg=FG_PRIMARY,
-            insertbackground=ACCENT,
-            relief="flat", bd=0,
-            highlightthickness=1,
-            highlightcolor=ACCENT,
-            highlightbackground=BG_BORDER,
-        )
-
-    def _refresh_radio_colors(self):
-        selected = self.tbs_var.get()
-        for rb in self._radio_buttons:
-            val = rb.cget("value")
-            if val == selected:
-                rb.config(bg=ACCENT, fg=BG_DARK)
+    def _select_period(self, value):
+        self.tbs_var.set(value)
+        for pill, v in self._pills:
+            if v == value:
+                pill.config(bg=BLUE_LIGHT, fg=BLUE_PRI)
             else:
-                rb.config(bg=BG_INPUT, fg=FG_MUTED)
-
-    # ── Log ───────────────────────────────────────────────────────────────────
+                pill.config(bg=BG_APP, fg=TEXT_MUTED)
 
     def _append_log(self, text, tag="normal"):
         self.log_area.config(state=tk.NORMAL)
-        self.log_area.insert(tk.END, text, tag)
+        self.log_area.insert(tk.END, text + "\n", tag)
         self.log_area.see(tk.END)
         self.log_area.config(state=tk.DISABLED)
 
@@ -208,22 +251,25 @@ class ClippingGUI:
             return "error"
         if any(k in lo for k in ("✅", "sucesso", "concluí", "gerado", "finalizado")):
             return "success"
-        if any(k in lo for k in ("[info]", "iniciando", "buscando", "conectado", "▸", "serper")):
-            return "info"
         if any(k in lo for k in ("warning", "aviso", "⚠")):
-            return "accent"
+            return "warn"
+        if any(k in lo for k in ("buscando", "serper", "conectado", "iniciando", "pipeline", "▸")):
+            return "info"
         return "normal"
 
     def log(self, message):
-        self.log_queue.put(message if message.endswith("\n") else message + "\n")
+        self.log_queue.put(message.rstrip())
 
     def check_queue(self):
         while not self.log_queue.empty():
             text = self.log_queue.get()
             tag = self._classify_tag(text)
             ts = datetime.now().strftime("%H:%M:%S")
-            self._append_log(f"[{ts}] ", "muted")
-            self._append_log(text, tag)
+            self.log_area.config(state=tk.NORMAL)
+            self.log_area.insert(tk.END, f"{ts}  ", "ts")
+            self.log_area.insert(tk.END, text + "\n", tag)
+            self.log_area.see(tk.END)
+            self.log_area.config(state=tk.DISABLED)
         self.root.after(100, self.check_queue)
 
     # ── Ações ─────────────────────────────────────────────────────────────────
@@ -231,13 +277,14 @@ class ClippingGUI:
     def start_processing(self):
         term = self.term_entry.get().strip()
         if not term:
-            self.term_entry.config(highlightbackground=FG_RED, highlightcolor=FG_RED)
-            self.root.after(600, lambda: self.term_entry.config(
-                highlightbackground=BG_BORDER, highlightcolor=ACCENT))
+            self._entry_frame.config(highlightbackground="#DC2626")
+            self.root.after(700, lambda: self._entry_frame.config(highlightbackground=BORDER))
+            self.status_label.config(text="Informe o termo de pesquisa", fg=LOG_ERROR)
             return
 
-        self.btn_run.config(state=tk.DISABLED, text="⏳  PROCESSANDO...")
-        self.status_dot.config(text="●  RUNNING", fg=ACCENT)
+        self.btn_run.config(state=tk.DISABLED, text="Processando…", bg="#93C5FD")
+        self.status_label.config(text="Executando pipeline…", fg=TEXT_MID)
+        self.log_status.config(text="● Executando", fg=BLUE_PRI)
 
         self.log_area.config(state=tk.NORMAL)
         self.log_area.delete(1.0, tk.END)
@@ -261,7 +308,6 @@ class ClippingGUI:
             os.environ["COMPANY_NAME"] = term
             os.environ["SEARCH_TBS"]   = tbs
 
-            # Garante reimport com env atualizado
             for mod in ["main", "services.search_service"]:
                 if mod in sys.modules:
                     del sys.modules[mod]
@@ -272,24 +318,24 @@ class ClippingGUI:
 
             from main import build_orchestrator
 
-            self.log("▸ Backend conectado. Executando pipeline...\n")
+            self.log("▸ Backend conectado. Executando pipeline…")
             orchestrator = build_orchestrator(tbs=tbs)
             synthesis = orchestrator.run()
 
             if synthesis:
-                self.log("\n✅ Relatório gerado com sucesso!")
-                self.log(f"\n{'─' * 50}")
+                self.log("✅ Relatório gerado com sucesso!")
+                self.log("─" * 48)
                 self.log("SÍNTESE EXECUTIVA (Gemini):")
-                self.log(f"{'─' * 50}")
+                self.log("─" * 48)
                 self.log(synthesis)
-                self.log(f"{'─' * 50}\n")
+                self.log("─" * 48)
             else:
                 self.log("⚠️  Nenhum conteúdo novo encontrado neste ciclo.")
 
             self.open_report()
 
-        except Exception as e:
-            self.log(f"\n❌ ERRO FATAL: {str(e)}")
+        except Exception as exc:
+            self.log(f"❌ ERRO FATAL: {exc}")
             import traceback
             self.log(traceback.format_exc())
         finally:
@@ -298,8 +344,9 @@ class ClippingGUI:
             self.root.after(0, self._reset_button)
 
     def _reset_button(self):
-        self.btn_run.config(state=tk.NORMAL, text="▶  GERAR RELATÓRIO")
-        self.status_dot.config(text="●  IDLE", fg=FG_MUTED)
+        self.btn_run.config(state=tk.NORMAL, text="Gerar Relatório", bg=BLUE_PRI)
+        self.status_label.config(text="Concluído", fg=LOG_SUCCESS)
+        self.log_status.config(text="● Concluído", fg=LOG_SUCCESS)
 
     def open_report(self):
         report_path = os.getenv("OUTPUT_MD_FILE", os.path.join("data", "clipping_output.md"))
