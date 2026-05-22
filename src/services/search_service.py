@@ -1,27 +1,29 @@
+
 """
 SearchService — Etapa 1
-Busca links sobre uma empresa usando motor de pesquisa.
-Retorna lista de URLs ainda não visitadas.
+Busca links sobre uma empresa usando motor de pesquisa (SerpAPI).
+Requer SERPAPI_API_KEY no .env.
 """
 
 import logging
 import os
+
 import random
 import time
 from typing import List
 
 from serpapi import GoogleSearch
 
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
 MAX_RESULTS_PER_QUERY = 10
 MAX_RETRIES = 4
 
 
+
 class SearchService:
     """
-    Responsável por buscar links de notícias/artigos sobre uma empresa.
-    Filtra links já visitados antes de retornar.
+    Busca links de notícias/artigos sobre uma empresa via SerpAPI.
     """
 
     def __init__(
@@ -30,31 +32,19 @@ class SearchService:
         results_count: int = 10,
         lang: str = "pt-BR",
         pause: float = 2.0,
+        tbs: str = "",
     ):
-        """
-        Args:
-            api_key: Chave da API SerpAPI.
-            results_count: Quantidade máxima de resultados por busca.
-            lang: Idioma preferido dos resultados.
-            pause: Pausa (segundos) entre requisições para evitar bloqueio.
-        """
         self.api_key = (api_key or os.getenv("SERPAPI_API_KEY", "")).strip()
         if not self.api_key:
             raise ValueError("[SearchService] SERPAPI_API_KEY não configurada.")
         self.results_count = min(results_count, MAX_RESULTS_PER_QUERY)
         self.lang = lang
         self.pause = pause
+        self.tbs = tbs  # ex: "d", "w", "m", "y"; vazio = qualquer período
 
     def search(self, company_name: str, visited_links: set) -> List[str]:
         """
         Executa a busca e retorna apenas links não visitados.
-
-        Args:
-            company_name: Nome da empresa a ser pesquisada.
-            visited_links: Conjunto de links já processados (para exclusão).
-
-        Returns:
-            Lista de URLs novas encontradas.
         """
         query = f'{company_name}'
         logger.info(f"[SearchService] Buscando por: {query!r}")
@@ -78,16 +68,17 @@ class SearchService:
         """
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                search_client = GoogleSearch(
-                    {
-                        "engine": "google",
-                        "q": query,
-                        "num": self.results_count,
-                        "hl": "pt",
-                        "gl": "br",
-                        "api_key": self.api_key,
-                    }
-                )
+                params = {
+                    "engine": "google",
+                    "q": query,
+                    "num": self.results_count,
+                    "hl": "pt",
+                    "gl": "br",
+                    "api_key": self.api_key,
+                }
+                if self.tbs:
+                    params["tbs"] = f"qdr:{self.tbs}"
+                search_client = GoogleSearch(params)
                 data = search_client.get_dict()
                 organic_results = data.get("organic_results", [])
                 links = [item.get("link") for item in organic_results if item.get("link")]
