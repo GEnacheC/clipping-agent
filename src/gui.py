@@ -10,6 +10,7 @@ import os
 import sys
 import subprocess
 import queue
+from pathlib import Path
 from datetime import datetime
 
 # ── Paleta flat azul/branco ───────────────────────────────────────────────────
@@ -186,6 +187,20 @@ class ClippingGUI:
         )
         self.btn_run.pack(side="left")
 
+        # Botão para abrir a tela de relatórios
+        self.btn_reports = tk.Button(
+            btn_outer,
+            text="Ver Relatórios",
+            font=FONT_BTN,
+            bg=BLUE_MUTED, fg=TEXT_DARK,
+            activebackground=BLUE_LIGHT, activeforeground=TEXT_DARK,
+            relief="flat", bd=0,
+            padx=12, pady=8,
+            cursor="hand2",
+            command=self.open_reports_view,
+        )
+        self.btn_reports.pack(side="left", padx=(8, 0))
+
         self.status_label = tk.Label(
             btn_outer, text="Pronto",
             font=("Segoe UI", 9), bg=BG_APP, fg=TEXT_MUTED,
@@ -289,9 +304,8 @@ class ClippingGUI:
         self.log_area.config(state=tk.NORMAL)
         self.log_area.delete(1.0, tk.END)
         self.log_area.config(state=tk.DISABLED)
-
         tbs = self.tbs_var.get()
-        period_label = next(l for l, v in PERIOD_OPTIONS if v == tbs)
+        period_label = next(label for label, v in PERIOD_OPTIONS if v == tbs)
         self.log(f"▸ Termo: {term}")
         self.log(f"▸ Período: {period_label}")
 
@@ -329,10 +343,14 @@ class ClippingGUI:
                 self.log("─" * 48)
                 self.log(synthesis)
                 self.log("─" * 48)
+                # Abrir a tela de relatórios e selecionar o relatório mais recente
+                try:
+                    self.root.after(50, lambda: self.open_reports_view(select_latest=True))
+                except Exception:
+                    # fallback: abrir o relatório diretamente
+                    self.open_report()
             else:
                 self.log("⚠️  Nenhum conteúdo novo encontrado neste ciclo.")
-
-            self.open_report()
 
         except Exception as exc:
             self.log(f"❌ ERRO FATAL: {exc}")
@@ -349,7 +367,27 @@ class ClippingGUI:
         self.log_status.config(text="● Concluído", fg=LOG_SUCCESS)
 
     def open_report(self):
-        report_path = os.getenv("OUTPUT_MD_FILE", os.path.join("data", "clipping_output.md"))
+        # Determina a pasta de saída a partir da variável OUTPUT_MD_FILE (ou data/ por padrão)
+        output_md = os.getenv("OUTPUT_MD_FILE", os.path.join("data", "clipping_output.md"))
+        report_dir = os.path.dirname(output_md) or "."
+
+        # Procura pelo arquivo de síntese gerado pelo Gemini (gemini_synthesis_*.md)
+        try:
+            from pathlib import Path
+
+            p = Path(report_dir)
+            candidates = sorted(
+                p.glob("gemini_synthesis_*.md"), key=lambda f: f.stat().st_mtime, reverse=True
+            )
+            if candidates:
+                report_path = str(candidates[0])
+            else:
+                # fallback para o arquivo configurado (clipping_output.md)
+                report_path = output_md
+        except Exception as exc:
+            self.log(f"⚠️ Erro ao localizar síntese: {exc}")
+            report_path = output_md
+
         if os.path.exists(report_path):
             self.log(f"▸ Abrindo relatório: {report_path}")
             if sys.platform == "win32":
@@ -360,6 +398,138 @@ class ClippingGUI:
                 subprocess.call(["xdg-open", report_path])
         else:
             self.log("⚠️  Arquivo de relatório não encontrado.")
+
+    def _open_path(self, report_path: str):
+        """Abrir arquivo no sistema (helper)."""
+        try:
+            if sys.platform == "win32":
+                os.startfile(report_path)
+            elif sys.platform == "darwin":
+                subprocess.call(["open", report_path])
+            else:
+                subprocess.call(["xdg-open", report_path])
+        except Exception as exc:
+            self.log(f"⚠️ Erro ao abrir arquivo: {exc}")
+
+    def open_reports_view(self, select_latest: bool = False):
+        """Abre uma janela listando relatórios gerados (mais recentes primeiro).
+
+        If select_latest is True, the most recent report (first in the list) will be
+        selected and its preview loaded automatically.
+        """
+        output_md = os.getenv("OUTPUT_MD_FILE", os.path.join("data", "clipping_output.md"))
+        report_dir = os.path.dirname(output_md) or "."
+
+        p = Path(report_dir)
+        files = []
+        try:
+            # incluir sínteses do Gemini e o arquivo padrão de clipping
+            for pattern in ("gemini_synthesis_*.md", Path(output_md).name):
+                for f in p.glob(pattern):
+                    files.append(f)
+        except Exception as exc:
+            self.log(f"⚠️ Erro ao listar relatórios: {exc}")
+
+        # ordenar por modificação (mais recentes primeiro)
+        files = sorted(files, key=lambda f: f.stat().st_mtime if f.exists() else 0, reverse=True)
+
+        # Janela Toplevel
+        win = tk.Toplevel(self.root)
+        win.title("Relatórios Gerados")
+        win.geometry("640x420")
+        win.configure(bg=BG_APP)
+
+        header = tk.Frame(win, bg=WHITE)
+        header.pack(fill="x", padx=12, pady=8)
+        tk.Label(header, text="Relatórios gerados", font=FONT_TITLE, bg=WHITE, fg=TEXT_DARK).pack(anchor="w")
+
+        # layout: listagem à esquerda, preview à direita
+        list_frame = tk.Frame(win, bg=BG_CARD)
+        list_frame.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+
+        left = tk.Frame(list_frame, bg=BG_CARD)
+        left.pack(side="left", fill="y", padx=(0, 8))
+
+        right = tk.Frame(list_frame, bg=BG_CARD)
+        right.pack(side="left", fill="both", expand=True)
+
+        scrollbar = tk.Scrollbar(left)
+        scrollbar.pack(side="right", fill="y")
+
+        listbox = tk.Listbox(left, width=36, font=FONT_MONO, bd=0, activestyle="none")
+        listbox.pack(fill="y", expand=True, side="left")
+        listbox.config(yscrollcommand=scrollbar.set)
+        scrollbar.config(command=listbox.yview)
+        path_map = []
+        for f in files:
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                mtime = "?"
+            display = f"{f.name}    —    {mtime}"
+            listbox.insert(tk.END, display)
+            path_map.append(str(f))
+
+        if not files:
+            listbox.insert(tk.END, "(Nenhum relatório encontrado)")
+        else:
+            # Se solicitado, selecionar o mais recente e carregar preview
+            if select_latest and len(path_map) > 0:
+                listbox.selection_set(0)
+                # garantir que o preview seja carregado após o loop
+                win.after(50, lambda: load_preview(0))
+
+        # Preview: ScrolledText no painel direito
+        preview = scrolledtext.ScrolledText(right, font=FONT_MONO, state=tk.DISABLED, wrap=tk.WORD)
+        preview.pack(fill="both", expand=True)
+
+        def load_preview(idx):
+            if idx < 0 or idx >= len(path_map):
+                return
+            path = path_map[idx]
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception as exc:
+                content = f"Erro ao ler arquivo: {exc}"
+
+            preview.config(state=tk.NORMAL)
+            preview.delete(1.0, tk.END)
+            preview.insert(tk.END, content)
+            preview.see(tk.END)
+            preview.config(state=tk.DISABLED)
+
+        def on_select(event=None):
+            sel = listbox.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            load_preview(idx)
+
+        listbox.bind("<<ListboxSelect>>", on_select)
+
+        # Ações inferiores
+        btns = tk.Frame(win, bg=BG_APP)
+        btns.pack(fill="x", pady=(0, 12), padx=12)
+
+        def open_external():
+            sel = listbox.curselection()
+            if not sel:
+                return
+            idx = sel[0]
+            if idx >= len(path_map):
+                return
+            report_path = path_map[idx]
+            if os.path.exists(report_path):
+                self.log(f"▸ Abrindo relatório externamente: {report_path}")
+                self._open_path(report_path)
+            else:
+                self.log("⚠️  Arquivo de relatório não encontrado.")
+
+        open_btn = tk.Button(btns, text="Abrir no Sistema", command=open_external, font=FONT_BTN, bg=BLUE_PRI, fg=WHITE)
+        open_btn.pack(side="left")
+        close_btn = tk.Button(btns, text="Fechar", command=win.destroy, font=FONT_BTN)
+        close_btn.pack(side="right")
 
 
 if __name__ == "__main__":

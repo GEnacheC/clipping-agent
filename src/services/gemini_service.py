@@ -10,7 +10,7 @@ from google import genai
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 PROMPT_TEMPLATE = """
 Você é um assistente especializado em clipping de notícias corporativas.
