@@ -349,7 +349,9 @@ class ClippingGUI:
         self.log_status.config(text="● Concluído", fg=LOG_SUCCESS)
 
     def open_report(self):
-        report_path = os.getenv("OUTPUT_MD_FILE", os.path.join("data", "clipping_output.md"))
+        timestamp_file = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"gemini_synthesis_{timestamp_file}.md"
+        report_path = os.getenv("OUTPUT_MD_FILE", os.path.join("data", file_name))
         if os.path.exists(report_path):
             self.log(f"▸ Abrindo relatório: {report_path}")
             if sys.platform == "win32":
