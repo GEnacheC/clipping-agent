@@ -6,3 +6,5 @@ nltk==3.8.1
 numpy
 google-genai
 python-dotenv==1.0.1
+markdown2
+xhtml2pdf

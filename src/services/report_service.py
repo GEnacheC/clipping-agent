@@ -9,6 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
+import markdown2
+from xhtml2pdf import pisa
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,10 +46,13 @@ class ReportService:
             logger.warning("[ReportService] Nenhum resumo válido para gerar relatório.")
             return ""
 
-        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+        timestamp_human = datetime.now().strftime("%d/%m/%Y %H:%M")
+        timestamp_file = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = self.output_path.parent / f"clipping_output_{timestamp_file}.md"
+
         lines = [
             f"# Clipping: {company_name}",
-            f"_Gerado em: {timestamp}_",
+            f"_Gerado em: {timestamp_human}_",
             "",
             "---",
             "",
@@ -63,10 +69,9 @@ class ReportService:
         content = "\n".join(lines)
 
         try:
-            # Modo append para não sobrescrever relatórios anteriores
-            with open(self.output_path, "a", encoding="utf-8") as f:
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            logger.info(f"[ReportService] Relatório salvo em: {self.output_path}")
+            logger.info(f"[ReportService] Relatório salvo em: {output_path}")
         except IOError as exc:
             logger.error(f"[ReportService] Erro ao salvar relatório: {exc}")
 
@@ -121,5 +126,26 @@ class ReportService:
             logger.info(f"[ReportService] Síntese salva em: {path}")
         except IOError as exc:
             logger.error(f"[ReportService] Erro ao salvar síntese: {exc}")
+
+        # Converter síntese para PDF
+        try:
+            pdf_path = path.with_suffix(".pdf")
+            html_body = markdown2.markdown(content, extras=["fenced-code-blocks", "tables"])
+            html_full = f"""<!DOCTYPE html>
+            <html><head><meta charset="utf-8">
+            <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; color: #222; }}
+            h1 {{ color: #1a1a2e; }} h2 {{ color: #16213e; }}
+            hr {{ border: 1px solid #ddd; }}
+            em {{ color: #555; }}
+            </style></head><body>{html_body}</body></html>"""
+            with open(pdf_path, "wb") as pdf_file:
+                result = pisa.CreatePDF(html_full, dest=pdf_file)
+            if result.err:
+                logger.error(f"[ReportService] Erro ao gerar PDF: {result.err}")
+            else:
+                logger.info(f"[ReportService] PDF gerado em: {pdf_path}")
+        except Exception as exc:
+            logger.error(f"[ReportService] Erro ao gerar PDF: {exc}")
 
         return str(path)
