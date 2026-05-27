@@ -1,6 +1,31 @@
-.venv
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente (contém chaves de API)
 .env
+
+# Cache Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Editores
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Dados gerados pelo app (não versionados)
 data/
+
+# Build do PyInstaller
+build/
+dist/
+*.pkg
+
+# OS
+.DS_Store
+Thumbs.db

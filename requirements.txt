@@ -8,3 +8,4 @@ google-genai
 python-dotenv==1.0.1
 markdown2
 xhtml2pdf
+Pillow

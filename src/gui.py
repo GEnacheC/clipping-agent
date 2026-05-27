@@ -326,7 +326,12 @@ class ClippingGUI:
                 if mod in sys.modules:
                     del sys.modules[mod]
 
-            src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+            # Frozen (PyInstaller): módulos já estão em sys._MEIPASS
+            # Script normal: src/ fica ao lado de gui.py
+            if getattr(sys, "frozen", False):
+                src_path = sys._MEIPASS
+            else:
+                src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
             if src_path not in sys.path:
                 sys.path.insert(0, src_path)
 
